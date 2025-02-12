@@ -4,14 +4,17 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/shallow";
 import { uploadFileToStorage } from "../http/upload-file-to-storage";
+import { compressImage } from "../utils/compress-image";
 
 export type Upload = {
 	name: string;
 	file: File;
 	abortController: AbortController;
 	status: "progress" | "success" | "error" | "canceled";
+	compressedSizeInBytes?: number;
 	originalSizeInBytes: number;
 	uploadSizeInBytes: number;
+	remoteUrl?: string;
 };
 
 type UploadState = {
@@ -47,9 +50,18 @@ export const useUploads = create<UploadState, [["zustand/immer", never]]>(
 			}
 
 			try {
-				await uploadFileToStorage(
+				const compressedFile = await compressImage({
+					file: upload.file,
+					maxWidth: 1000,
+					maxHeight: 1000,
+					quality: 0.8,
+				});
+
+				updateUpload(uploadId, { compressedSizeInBytes: compressedFile.size });
+
+				const { url } = await uploadFileToStorage(
 					{
-						file: upload.file,
+						file: compressedFile,
 						onProgress(sizeInBytes) {
 							updateUpload(uploadId, {
 								uploadSizeInBytes: sizeInBytes,
@@ -61,6 +73,7 @@ export const useUploads = create<UploadState, [["zustand/immer", never]]>(
 
 				updateUpload(uploadId, {
 					status: "success",
+					remoteUrl: url,
 				});
 			} catch (err) {
 				if (err instanceof CanceledError) {
